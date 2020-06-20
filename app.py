@@ -1,18 +1,22 @@
 import pandas as pd
+import os
 
 from surprise import Reader, Dataset, dump, KNNBasic
-from surprise.accuracy import rmse, mae
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, request, jsonify, send_from_directory
+
+# from flask_cors import CORS
 from werkzeug.exceptions import BadRequest
 
 from markupsafe import escape
 from wrapper.recommender import RecSys
 from algo.IncrementalSVD import IncrementalSVD as InSVD
 from algo.XQuad import re_rank
+from helper.data import surprise_build_full_train_test as build_full_train_test
 
 app = Flask(__name__)
-CORS(app)
+
+
+# CORS(app)
 
 
 # app.config['DEBUG'] = True
@@ -69,10 +73,7 @@ def get_product_neighbors(asin):
 def train_svd():
     # Build dataset that fits surprise library.
     data = pd.read_csv('./data/3M_20.csv', header=0)
-    reader = Reader()
-    raw_data = Dataset.load_from_df(data, reader=reader)
-    train_set = raw_data.build_full_trainset()
-    test_set = train_set.build_testset()
+    train_set, test_set = build_full_train_test(data, Reader())
 
     # Start training.
     model = InSVD(n_factors=20, n_epochs=100, lr_all=0.005, reg_all=.1, random_state=42)
@@ -85,12 +86,9 @@ def train_svd():
 
 
 @app.route('/api/v1/models/iknn', methods=['GET'])
-def train_knn():
+def train_iknn():
     data = pd.read_csv('./data/3M_20.csv', header=0)
-    reader = Reader()
-    raw_data = Dataset.load_from_df(data, reader=reader)
-    train_set = raw_data.build_full_trainset()
-    test_set = train_set.build_testset()
+    train_set, test_set = build_full_train_test(data, Reader())
 
     model = KNNBasic(k=50, sim_options={'name': 'cosine', 'user_based': False}, random_state=42)
     model.fit(train_set)
@@ -100,9 +98,25 @@ def train_knn():
     return 'Done training Item-based KNN model.'
 
 
-@app.route('/api/v1/dataset', methods=['POST'])
+@app.route('/api/v1/dataset', methods=['GET', 'POST'])
 def upload_dataset():
-    pass
+    if request.method == 'POST':
+        old_data_path = './data/data-new.csv'
+
+        if os.path.isfile(old_data_path):
+            os.rename('./data/data-new.csv', old_data_path)
+
+        data = request.get_json()
+
+        if not data:
+            return 'Empty file', 400
+
+        df = pd.DataFrame(data['data'], columns=data['header'])
+        df.to_csv('./data/data-new.csv', index=False)
+
+        return 'Uploading success.', 200
+    else:
+        return send_from_directory('./data', 'data-new.csv'), 200
 
 
 @app.errorhandler(BadRequest)

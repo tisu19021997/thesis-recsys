@@ -1,4 +1,3 @@
-import os
 from surprise import dump
 from surprise.accuracy import rmse, mae
 from helper.accuracy import precision_recall_at_k
