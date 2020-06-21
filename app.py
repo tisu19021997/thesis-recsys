@@ -1,13 +1,13 @@
 import pandas as pd
 import os
-import time
+from zipfile import ZipFile
 
 from surprise import Reader, dump, KNNBasic
 from surprise.accuracy import rmse, mae
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, Response, jsonify, send_from_directory, after_this_request
 
-# from flask_cors import CORS
-from werkzeug.exceptions import BadRequest
+from flask_cors import CORS
+from werkzeug.exceptions import BadRequest, abort
 
 from markupsafe import escape
 from wrapper.recommender import RecSys
@@ -16,9 +16,9 @@ from algo.XQuad import re_rank
 from helper.data import surprise_build_train_test as build_train_test
 
 app = Flask(__name__)
+CORS(app)
 
 
-# CORS(app)
 # app.config['DEBUG'] = True
 
 @app.route('/api/v1/users/<string:uid>', methods=['GET', 'POST'])
@@ -81,8 +81,15 @@ def train_model():
     if model_name == 'insvd':
         n_factors, n_epochs, lr_all, reg_all, random_state = params.values()
 
+        # Parse data types.
+        n_factors = int(n_factors)
+        n_epochs = int(n_epochs)
+        lr_all = float(lr_all)
+        reg_all = float(reg_all)
+        random_state = int(random_state)
+
         model = InSVD(n_factors=n_factors, n_epochs=n_epochs,
-                      lr_all=lr_all, reg_all=reg_all, random_state=42)
+                      lr_all=lr_all, reg_all=reg_all, random_state=random_state)
     else:
         k, sim_options, random_state = params.values()
 
@@ -92,16 +99,51 @@ def train_model():
     predictions = model.test(test_set)
 
     # Add suffix if not save on server.
-    model_file = f'{model_name}s' if save_on_server else f'{model_name}-temp'
+    model_path = f'./model/{model_name}' if save_on_server else f'./model/{model_name}-temp'
 
     # Save.
-    dump.dump(f'./model/{model_file}', algo=model, predictions=predictions)
+    dump.dump(model_path, algo=model, predictions=predictions)
     rmse(predictions)
 
+    # Zip the trained model.
+    try:
+        zip_obj = ZipFile(f'{model_path}.zip', 'w')
+        zip_obj.write(model_path)
+        zip_obj.close()
+    except FileNotFoundError:
+        return abort(404)
+
+    # If not save model on server, delete model dump file.
+    @after_this_request
+    def remove_dump_files(response):
+        if not save_on_server:
+            os.remove(model_path)
+
+        # Always delete the .zip file.
+        os.remove(f'{model_path}.zip')
+
+        return response
+
     if save_on_local:
-        return send_from_directory('./model', model_file), 200
+        with open(f'{model_path}.zip', 'rb') as f:
+            model_zip = f.readlines()
+
+        return Response(model_zip, headers={
+            'Content-Type': 'application/zip',
+            'Content-Disposition': 'attachment; filename=%s;' % 'model.zip'
+        })
+
+        # return send_from_directory('./model', model_file), 200
 
     return 'Done', 200
+
+
+@app.route('/api/v1/models/test', methods=['GET'])
+def test_model():
+    preds, model = dump.load('./model/insvd')
+    rmse(preds)
+
+    return 'OK', 200
 
 
 @app.route('/api/v1/dataset', methods=['GET', 'POST'])
