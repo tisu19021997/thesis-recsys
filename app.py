@@ -1,7 +1,9 @@
 import pandas as pd
 import os
+import time
 
-from surprise import Reader, Dataset, dump, KNNBasic
+from surprise import Reader, dump, KNNBasic
+from surprise.accuracy import rmse, mae
 from flask import Flask, request, jsonify, send_from_directory
 
 # from flask_cors import CORS
@@ -11,14 +13,12 @@ from markupsafe import escape
 from wrapper.recommender import RecSys
 from algo.IncrementalSVD import IncrementalSVD as InSVD
 from algo.XQuad import re_rank
-from helper.data import surprise_build_full_train_test as build_full_train_test
+from helper.data import surprise_build_train_test as build_train_test
 
 app = Flask(__name__)
 
 
 # CORS(app)
-
-
 # app.config['DEBUG'] = True
 
 @app.route('/api/v1/users/<string:uid>', methods=['GET', 'POST'])
@@ -69,40 +69,48 @@ def get_product_neighbors(asin):
         handle_bad_request(e)
 
 
-@app.route('/api/v1/models/insvd', methods=['GET'])
-def train_svd():
-    # Build dataset that fits surprise library.
-    data = pd.read_csv('./data/3M_20.csv', header=0)
-    train_set, test_set = build_full_train_test(data, Reader())
+@app.route('/api/v1/models', methods=['POST'])
+def train_model():
+    # Extract data from request.
+    data = request.get_json()
+    dataset, data_header, model_name, params, train_type, save_on_server, save_on_local = data.values()
 
-    # Start training.
-    model = InSVD(n_factors=20, n_epochs=100, lr_all=0.005, reg_all=.1, random_state=42)
+    df = pd.DataFrame(dataset, columns=data_header) if dataset else pd.read_csv('./data/data-new.csv', header=0)
+    train_set, test_set = build_train_test(df, Reader(), full=train_type == 'full')
+
+    if model_name == 'insvd':
+        n_factors, n_epochs, lr_all, reg_all, random_state = params.values()
+
+        model = InSVD(n_factors=n_factors, n_epochs=n_epochs,
+                      lr_all=lr_all, reg_all=reg_all, random_state=42)
+    else:
+        k, sim_options, random_state = params.values()
+
+        model = KNNBasic(k=k, sim_options={'name': sim_options, 'user_based': False}, random_state=random_state)
+
     model.fit(train_set)
     predictions = model.test(test_set)
+
+    # Add suffix if not save on server.
+    model_file = f'{model_name}s' if save_on_server else f'{model_name}-temp'
 
     # Save.
-    dump.dump('./model/insvd', algo=model, predictions=predictions)
-    return 'Done training IncrementalSVD model.'
+    dump.dump(f'./model/{model_file}', algo=model, predictions=predictions)
+    rmse(predictions)
 
+    if save_on_local:
+        return send_from_directory('./model', model_file), 200
 
-@app.route('/api/v1/models/iknn', methods=['GET'])
-def train_iknn():
-    data = pd.read_csv('./data/3M_20.csv', header=0)
-    train_set, test_set = build_full_train_test(data, Reader())
-
-    model = KNNBasic(k=50, sim_options={'name': 'cosine', 'user_based': False}, random_state=42)
-    model.fit(train_set)
-    predictions = model.test(test_set)
-
-    dump.dump('./model/iknn', algo=model, predictions=predictions)
-    return 'Done training Item-based KNN model.'
+    return 'Done', 200
 
 
 @app.route('/api/v1/dataset', methods=['GET', 'POST'])
 def upload_dataset():
+    # Posting new dataset.
     if request.method == 'POST':
-        old_data_path = './data/data-new.csv'
+        old_data_path = './data/data-old.csv'
 
+        # If the old dataset exists, rename it to *-old.csv
         if os.path.isfile(old_data_path):
             os.rename('./data/data-new.csv', old_data_path)
 
@@ -111,10 +119,13 @@ def upload_dataset():
         if not data:
             return 'Empty file', 400
 
+        # Save as a csv file.
+        print(data['data'][0])
         df = pd.DataFrame(data['data'], columns=data['header'])
         df.to_csv('./data/data-new.csv', index=False)
 
         return 'Uploading success.', 200
+    # Get current dataset.
     else:
         return send_from_directory('./data', 'data-new.csv'), 200
 
