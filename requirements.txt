@@ -15,3 +15,4 @@ scipy==1.4.1
 six==1.15.0
 surprise==0.1
 Werkzeug==1.0.1
+requests~=2.24.0

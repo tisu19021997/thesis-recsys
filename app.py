@@ -1,3 +1,5 @@
+import requests
+import json
 import pandas as pd
 import os
 from zipfile import ZipFile
@@ -8,15 +10,16 @@ from flask import Flask, request, Response, jsonify, send_from_directory, after_
 
 from flask_cors import CORS
 from werkzeug.exceptions import BadRequest, abort
-
 from markupsafe import escape
+
 from wrapper.recommender import RecSys
 from algo.IncrementalSVD import IncrementalSVD as InSVD
 from algo.XQuad import re_rank
 from helper.data import surprise_build_train_test as build_train_test
+from auth.auth import BearerAuth
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, expose_headers='X-Model-Info')
 
 
 # app.config['DEBUG'] = True
@@ -71,10 +74,18 @@ def get_product_neighbors(asin):
 
 @app.route('/api/v1/models', methods=['POST'])
 def train_model():
+    # Send request to Nodejs server for authentication.
+    _, jwt = request.headers['Authorization'].split()
+    r = requests.get('http://127.0.0.1:8081/api/v1/auth/admin', auth=BearerAuth(jwt))
+
+    if r.status_code != 200:
+        return abort(r.status_code)
+
     # Extract data from request.
     data = request.get_json()
     dataset, data_header, model_name, params, train_type, save_on_server, save_on_local = data.values()
 
+    # Use the data uploaded or data on server.
     df = pd.DataFrame(dataset, columns=data_header) if dataset else pd.read_csv('./data/data-new.csv', header=0)
     train_set, test_set = build_train_test(df, Reader(), full=train_type == 'full')
 
@@ -95,6 +106,7 @@ def train_model():
 
         model = KNNBasic(k=k, sim_options={'name': sim_options, 'user_based': False}, random_state=random_state)
 
+    # Fitting and testing.
     model.fit(train_set)
     predictions = model.test(test_set)
 
@@ -103,7 +115,10 @@ def train_model():
 
     # Save.
     dump.dump(model_path, algo=model, predictions=predictions)
-    rmse(predictions)
+    model_info = {
+        'rmse': rmse(predictions),
+        'mae': mae(predictions),
+    }
 
     # Zip the trained model.
     try:
@@ -113,9 +128,9 @@ def train_model():
     except FileNotFoundError:
         return abort(404)
 
-    # If not save model on server, delete model dump file.
     @after_this_request
     def remove_dump_files(response):
+        # If not save model on server, delete model dump file.
         if not save_on_server:
             os.remove(model_path)
 
@@ -128,14 +143,21 @@ def train_model():
         with open(f'{model_path}.zip', 'rb') as f:
             model_zip = f.readlines()
 
-        return Response(model_zip, headers={
-            'Content-Type': 'application/zip',
-            'Content-Disposition': 'attachment; filename=%s;' % 'model.zip'
-        })
+        resp = Response(model_zip)
+        resp.headers['X-Model-Info'] = json.dumps(model_info)
+        resp.headers['Content-Type'] = 'application/zip'
+        resp.headers['Content-Disposition'] = 'attachment; filename=%s;' % 'model.zip'
+
+        return resp
+        # return Response(model_zip, headers={
+        #     'X-Info': json.dumps(model_info),
+        #     'Content-Type': 'application/zip',
+        #     'Content-Disposition': 'attachment; filename=%s;' % 'model.zip',
+        # })
 
         # return send_from_directory('./model', model_file), 200
 
-    return 'Done', 200
+    return jsonify(model_info)
 
 
 @app.route('/api/v1/models/test', methods=['GET'])
@@ -148,25 +170,32 @@ def test_model():
 
 @app.route('/api/v1/dataset', methods=['GET', 'POST'])
 def upload_dataset():
+    # Send request to Nodejs server for authentication.
+    _, jwt = request.headers['Authorization'].split()
+    r = requests.get('http://127.0.0.1:8081/api/v1/auth/admin', auth=BearerAuth(jwt))
+
+    if r.status_code != 200:
+        return abort(r.status_code)
+
     # Posting new dataset.
     if request.method == 'POST':
         old_data_path = './data/data-old.csv'
+        new_data_path = './data/data-new.csv'
 
         # If the old dataset exists, rename it to *-old.csv
-        if os.path.isfile(old_data_path):
-            os.rename('./data/data-new.csv', old_data_path)
+        if os.path.isfile(new_data_path):
+            os.rename(new_data_path, old_data_path)
 
         data = request.get_json()
 
-        if not data:
-            return 'Empty file', 400
+        if not data['data']:
+            return jsonify({'message': 'Empty data.'})
 
         # Save as a csv file.
-        print(data['data'][0])
         df = pd.DataFrame(data['data'], columns=data['header'])
-        df.to_csv('./data/data-new.csv', index=False)
+        df.to_csv(new_data_path, index=False)
 
-        return 'Uploading success.', 200
+        return jsonify({'message': 'Uploading successfully.'})
     # Get current dataset.
     else:
         return send_from_directory('./data', 'data-new.csv'), 200
