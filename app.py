@@ -16,6 +16,7 @@ from wrapper.recommender import RecSys
 from algo.IncrementalSVD import IncrementalSVD as InSVD
 from algo.XQuad import re_rank
 from helper.data import surprise_build_train_test as build_train_test
+from helper.data import is_header_valid
 from auth.auth import BearerAuth
 
 app = Flask(__name__)
@@ -23,9 +24,52 @@ CORS(app, expose_headers='X-Model-Info')
 
 
 # app.config['DEBUG'] = True
+def build_recommendations(recsys, raw_uid, k=50):
+    # Get the short head and long tail items for re-ranking the recommendation list.
+    short_head_items, long_tail_items = recsys.get_short_head_and_long_tail_items(threshold=20)
+
+    # Get the recommendations then re-rank using xQuAD algorithm
+    inner_uid = recsys.model.trainset.to_inner_uid(raw_uid)
+    user_profile = recsys.model.trainset.ur[inner_uid]
+
+    return re_rank(recsys.recommend(raw_uid, 1000), user_profile, short_head_items, long_tail_items,
+                   recsys.model.trainset, epochs=int(k), reg=0.1, binary=True)
+
+
+def is_jwt_good(jwt):
+    r = requests.get('http://127.0.0.1:8081/api/v1/auth/admin', auth=BearerAuth(jwt))
+    return r.status_code == 200
+
+
+@app.route('/api/v1/users/batch', methods=['POST'])
+def get_users_recommendation():
+    try:
+        data = request.get_json()
+        users, k = data.values()
+
+        if not users:
+            return jsonify({'message': 'No user selected. Please select users to generate.'})
+
+        k = int(k) or 50
+
+        # Init Incremental SVD Model.
+        recsys = RecSys('./model/insvd')
+
+        # Create a list to store all recommendations.
+        all_recommendations = []
+
+        for raw_uid in users:
+            recommendations = build_recommendations(recsys, raw_uid, k)
+            all_recommendations.append({'user': raw_uid, 'recommendation': recommendations})
+
+        return jsonify({'recommendations': all_recommendations})
+
+    except (ValueError, KeyError) as e:
+        handle_bad_request(e)
+
 
 @app.route('/api/v1/users/<string:uid>', methods=['GET', 'POST'])
-def get_user_recommendations(uid):
+def get_user_recommendation(uid):
     try:
         # Escaping params.
         raw_uid = escape(uid)
@@ -76,34 +120,37 @@ def get_product_neighbors(asin):
 def train_model():
     # Send request to Nodejs server for authentication.
     _, jwt = request.headers['Authorization'].split()
-    r = requests.get('http://127.0.0.1:8081/api/v1/auth/admin', auth=BearerAuth(jwt))
 
-    if r.status_code != 200:
-        return abort(r.status_code)
+    if not is_jwt_good(jwt):
+        return abort(400)
 
     # Extract data from request.
     data = request.get_json()
     dataset, data_header, model_name, params, train_type, save_on_server, save_on_local = data.values()
 
+    # if not is_header_valid(data_header):
+    #     return jsonify({'message': '[ERROR] Incorrect dataset format.'})
+
     # Use the data uploaded or data on server.
     df = pd.DataFrame(dataset, columns=data_header) if dataset else pd.read_csv('./data/data-new.csv', header=0)
-    train_set, test_set = build_train_test(df, Reader(), full=train_type == 'full')
+    try:
+        train_set, test_set = build_train_test(df, Reader(), full=train_type == 'full')
+    except ValueError:
+        return jsonify({'error': 'Incorrect dataset format.'})
 
     if model_name == 'insvd':
         n_factors, n_epochs, lr_all, reg_all, random_state = params.values()
-
+        ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
         # Parse data types.
         n_factors = int(n_factors)
         n_epochs = int(n_epochs)
         lr_all = float(lr_all)
         reg_all = float(reg_all)
         random_state = int(random_state)
-
         model = InSVD(n_factors=n_factors, n_epochs=n_epochs,
                       lr_all=lr_all, reg_all=reg_all, random_state=random_state)
     else:
         k, sim_options, random_state = params.values()
-
         model = KNNBasic(k=k, sim_options={'name': sim_options, 'user_based': False}, random_state=random_state)
 
     # Fitting and testing.
@@ -172,32 +219,34 @@ def test_model():
 def upload_dataset():
     # Send request to Nodejs server for authentication.
     _, jwt = request.headers['Authorization'].split()
-    r = requests.get('http://127.0.0.1:8081/api/v1/auth/admin', auth=BearerAuth(jwt))
 
-    if r.status_code != 200:
-        return abort(r.status_code)
+    if not is_jwt_good(jwt):
+        return abort(400)
 
     # Posting new dataset.
     if request.method == 'POST':
         old_data_path = './data/data-old.csv'
         new_data_path = './data/data-new.csv'
 
-        # If the old dataset exists, rename it to *-old.csv
-        if os.path.isfile(new_data_path):
-            os.rename(new_data_path, old_data_path)
-
         data = request.get_json()
+
+        if not is_header_valid(data['header']):
+            return jsonify({'message': 'Incorrect dataset format.'})
 
         if not data['data']:
             return jsonify({'message': 'Empty data.'})
+
+        # If the old dataset exists, rename it to *-old.csv
+        if os.path.isfile(new_data_path):
+            os.rename(new_data_path, old_data_path)
 
         # Save as a csv file.
         df = pd.DataFrame(data['data'], columns=data['header'])
         df.to_csv(new_data_path, index=False)
 
         return jsonify({'message': 'Uploading successfully.'})
-    # Get current dataset.
     else:
+        # Get current dataset.
         return send_from_directory('./data', 'data-new.csv'), 200
 
 

@@ -1,5 +1,6 @@
 from surprise import Dataset
 from surprise.model_selection import train_test_split
+from flask import jsonify
 
 
 def surprise_build_train_test(data_frame, reader, full=True):
@@ -26,3 +27,11 @@ def get_products_from_ratings(ratings, tolist=False):
 
 def get_reviewers_from_ratings(ratings, tolist=False):
     return ratings.reviewerID if not tolist else ratings.reviewerID.values.tolist()
+
+
+def is_header_valid(data_header):
+    # Check header.
+    if data_header != ['reviewerID', 'asin', 'overall']:
+        return False
+
+    return True
