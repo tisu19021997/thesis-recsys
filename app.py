@@ -1,4 +1,3 @@
-import requests
 import json
 import pandas as pd
 import os
@@ -15,9 +14,8 @@ from markupsafe import escape
 from wrapper.recommender import RecSys
 from algo.IncrementalSVD import IncrementalSVD as InSVD
 from algo.XQuad import re_rank
-from helper.data import surprise_build_train_test as build_train_test
-from helper.data import is_header_valid
-from auth.auth import BearerAuth
+from helper.data import surprise_build_train_test as build_train_test, is_header_valid
+from helper.auth import is_good_request
 
 app = Flask(__name__)
 CORS(app, expose_headers='X-Model-Info')
@@ -36,13 +34,8 @@ def build_recommendations(recsys, raw_uid, k=50):
                    recsys.model.trainset, epochs=int(k), reg=0.1, binary=True)
 
 
-def is_jwt_good(jwt):
-    r = requests.get('http://127.0.0.1:8081/api/v1/auth/admin', auth=BearerAuth(jwt))
-    return r.status_code == 200
-
-
 @app.route('/api/v1/users/batch', methods=['POST'])
-def get_users_recommendation():
+def build_users_recommendation():
     try:
         data = request.get_json()
         users, k = data.values()
@@ -68,8 +61,27 @@ def get_users_recommendation():
         handle_bad_request(e)
 
 
+@app.route('/api/v1/products/batch', methods=['POST'])
+def build_products_neighbors():
+    try:
+        recsys = RecSys('./model/iknn')
+        data = request.get_json()
+        products, k = data.values()
+
+        all_recommendations = []
+
+        for asin in products:
+            recommendations = recsys.get_k_neighbors(asin, k=int(k))
+            all_recommendations.append({'product': asin, 'recommendation': recommendations})
+
+        return jsonify({'recommendations': all_recommendations})
+
+    except (ValueError, KeyError) as e:
+        handle_bad_request(e)
+
+
 @app.route('/api/v1/users/<string:uid>', methods=['GET', 'POST'])
-def get_user_recommendation(uid):
+def build_user_recommendation(uid):
     try:
         # Escaping params.
         raw_uid = escape(uid)
@@ -103,7 +115,7 @@ def get_user_recommendation(uid):
 
 
 @app.route('/api/v1/products/<string:asin>', methods=['GET'])
-def get_product_neighbors(asin):
+def build_product_neighbors(asin):
     try:
         # Init Item-based KNN model.
         recsys = RecSys('./model/iknn')
@@ -119,9 +131,7 @@ def get_product_neighbors(asin):
 @app.route('/api/v1/models', methods=['POST'])
 def train_model():
     # Send request to Nodejs server for authentication.
-    _, jwt = request.headers['Authorization'].split()
-
-    if not is_jwt_good(jwt):
+    if not is_good_request(request):
         return abort(400)
 
     # Extract data from request.
@@ -217,10 +227,7 @@ def test_model():
 
 @app.route('/api/v1/dataset', methods=['GET', 'POST'])
 def upload_dataset():
-    # Send request to Nodejs server for authentication.
-    _, jwt = request.headers['Authorization'].split()
-
-    if not is_jwt_good(jwt):
+    if not is_good_request(request):
         return abort(400)
 
     # Posting new dataset.
