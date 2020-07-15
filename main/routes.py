@@ -2,6 +2,7 @@ import json
 import pandas as pd
 import os
 from zipfile import ZipFile
+from main import app
 
 from surprise import Reader, dump, KNNBasic
 from surprise.accuracy import rmse, mae
@@ -17,7 +18,6 @@ from algo.XQuad import re_rank
 from helper.data import surprise_build_train_test as build_train_test, is_header_valid
 from helper.auth import is_good_request
 
-app = Flask(__name__)
 CORS(app, expose_headers='X-Model-Info')
 
 

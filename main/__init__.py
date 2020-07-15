@@ -1,3 +1,4 @@
+import main.routes
 from flask import Flask
 from main.config import configure_app
 
