@@ -37,6 +37,7 @@ class RecSys:
 
         # looping through each item in train set, predict the rating of each pair of item and user
         for iid in self.model.trainset.all_items():
+            # excluding items already rated by user
             if iid in rated_items:
                 continue
 
@@ -71,7 +72,7 @@ class RecSys:
         return short_head_items, long_tail_items
 
     def get_k_neighbors(self, raw_id, user_based=False, k=50):
-        """Returns Top-K neighbors of a user of item (only for KNN-inspired models).
+        """Returns Top-K neighbors of a user of item (for KNN-inspired models only).
         Args:
             user_based (bool): User or item based neighbors
             raw_id (str): User/item raw id

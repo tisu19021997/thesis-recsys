@@ -16,8 +16,9 @@ class IncrementalSVD(SVD):
                 inner_uid = self.trainset.n_users
                 self.trainset.n_users += 1
                 self.trainset._raw2inner_id_users[uid] = inner_uid
-                self.trainset._inner2raw_id_users[inner_uid] = uid
 
+                if self.trainset._inner2raw_id_users is not None:
+                    self.trainset._inner2raw_id_users[inner_uid] = uid
 
             try:
                 inner_iid = self.trainset.to_inner_iid(iid)
@@ -26,7 +27,9 @@ class IncrementalSVD(SVD):
                 inner_iid = self.trainset.n_items
                 self.trainset.n_items += 1
                 self.trainset._raw2inner_id_items[iid] = inner_iid
-                self.trainset._inner2raw_id_items[inner_iid] = iid
+
+                if self.trainset._inner2raw_id_items is not None:
+                    self.trainset._inner2raw_id_items[inner_iid] = iid
 
             # append new item with rating in the user profile
             self.trainset.ur[inner_uid].append((inner_iid, rating))
@@ -58,19 +61,20 @@ class IncrementalSVD(SVD):
 
                 # if user is new, append new row to `pu`, new column to `bu`
                 if u > len(pu) - 1:
-                    pu = np.vstack([pu, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))])
-                    bu = np.hstack([bu, 0])
+                    pu = np.concatenate((pu, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))),
+                                        axis=0)
+                    bu = np.append(bu, 0)
 
-                # same for item
+                    # same for item
                 if i > len(qi) - 1:
-                    qi = np.vstack([qi, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))])
-                    bi = np.hstack([bi, 0])
+                    qi = np.concatenate((qi, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))),
+                                        axis=0)
+                    bi = np.append(bi, 0)
 
                 for f in range(self.n_factors):
                     dot += qi[i, f] * pu[u, f]
 
                 # compute the error
-
                 err = r - (global_mean + bu[u] + bi[i] + dot)
 
                 if verbose:

@@ -8,7 +8,7 @@ from surprise.accuracy import rmse, mae
 from flask import Flask, request, Response, jsonify, send_from_directory, after_this_request
 
 from flask_cors import CORS
-from werkzeug.exceptions import BadRequest, abort
+from werkzeug.exceptions import HTTPException, abort
 from markupsafe import escape
 
 from wrapper.recommender import RecSys
@@ -37,6 +37,7 @@ def build_recommendations(recsys, raw_uid, k=50):
 @app.route('/api/v1/users/batch', methods=['POST'])
 def build_users_recommendation():
     try:
+        # Extracting users list and number of recommendations from the request.
         data = request.get_json()
         users, k = data.values()
 
@@ -58,7 +59,7 @@ def build_users_recommendation():
         return jsonify({'recommendations': all_recommendations})
 
     except (ValueError, KeyError) as e:
-        handle_bad_request(e)
+        return str(e)
 
 
 @app.route('/api/v1/products/batch', methods=['POST'])
@@ -83,7 +84,7 @@ def build_products_neighbors():
 @app.route('/api/v1/users/<string:uid>', methods=['GET', 'POST'])
 def build_user_recommendation(uid):
     try:
-        # Escaping params.
+        # Escaping param.
         raw_uid = escape(uid)
 
         # Init Incremental SVD Model.
@@ -117,6 +118,9 @@ def build_user_recommendation(uid):
 @app.route('/api/v1/products/<string:asin>', methods=['GET'])
 def build_product_neighbors(asin):
     try:
+        # Escaping param.
+        asin = escape(asin)
+
         # Init Item-based KNN model.
         recsys = RecSys('./model/iknn')
         k = request.args.get('k', 50)
@@ -161,7 +165,8 @@ def train_model():
                       lr_all=lr_all, reg_all=reg_all, random_state=random_state)
     else:
         k, sim_options, random_state = params.values()
-        model = KNNBasic(k=k, sim_options={'name': sim_options, 'user_based': False}, random_state=random_state)
+        model = KNNBasic(k=int(k), sim_options={'name': sim_options, 'user_based': False},
+                         random_state=int(random_state))
 
     # Fitting and testing.
     model.fit(train_set)
@@ -257,9 +262,15 @@ def upload_dataset():
         return send_from_directory('./data', 'data-new.csv'), 200
 
 
-@app.errorhandler(BadRequest)
+@app.errorhandler(HTTPException)
 def handle_bad_request(e):
-    return e.description, e.code
+    response = e.get_response()
+    # replace the body with JSON
+    response.data = json.dumps({
+        'message': f'[Error {e.code} {e.name}] {e.description}',
+    })
+    response.content_type = 'application/json'
+    return response
 
 
 if __name__ == '__main__':
