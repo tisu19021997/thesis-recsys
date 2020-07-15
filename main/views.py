@@ -6,7 +6,7 @@ from main import app
 
 from surprise import Reader, dump, KNNBasic
 from surprise.accuracy import rmse, mae
-from flask import Flask, request, Response, jsonify, send_from_directory, after_this_request
+from flask import request, Response, jsonify, send_from_directory, after_this_request
 
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException, abort
@@ -271,7 +271,3 @@ def handle_bad_request(e):
     })
     response.content_type = 'application/json'
     return response
-
-
-if __name__ == '__main__':
-    app.run()
