@@ -19,6 +19,7 @@ from helper.data import surprise_build_train_test as build_train_test, is_header
 from helper.auth import is_good_request
 
 CORS(app, expose_headers='X-Model-Info')
+app.config['CORS_HEADER'] = 'Content-Type'
 
 
 # app.config['DEBUG'] = True
