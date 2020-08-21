@@ -63,3 +63,63 @@ def re_rank(recommend_list: [tuple], user_profile: [tuple], short_head_items: se
         re_ranked_list.append(best_item)
 
     return tuple(zip(re_ranked_list, scores))
+
+
+def xquad(recommendation, user_profile, short_items, long_items, trainset, n_epochs=10, reg=.35, binary=False):
+    # In case there are not enough items in the recommendation list
+    n_epochs = min(len(recommendation), n_epochs)
+
+    final_result = []
+    S = []
+
+    # In order to select the next item to add to S,
+    # we compute a score for each item in R\S (in R not in S)
+    for n in range(n_epochs):
+        # For selecting the best score
+        best_score = float('-Inf')
+        best_item = None
+
+        for r in recommendation:
+            v = r[0]
+            p_vu = r[1]
+
+            # v already in S, so skip it.
+            if v in S:
+                continue
+
+            p_vu = (p_vu - 1.0) / (5.0 - 1.0)
+            score = (1 - reg) * (p_vu)
+
+            summation = 0
+
+            for d in (short_items, long_items):
+                # Because P(v|c)is 0 if `v` not in category `d`
+                if v not in d:
+                    summation += 0
+                    continue
+
+                # The ratio of items in the user profile which belong to category `d`
+                p_du = sum([item in d for item in user_profile]) / len(user_profile)
+
+                # Binary - equals to 1 when item `i` in list `S` already covers category `d`, 0 otherwise
+                if binary:
+                    p_id_s = 1 if any([i in d for i in S]) else 0
+                else:
+                    # Smooth - the ratio of items in list `S` that covers category `d`
+                    p_id_s = sum([i in d for i in S]) / len(S) if len(S) > 0 else 0
+
+                # pi = (1 - P(i|d, S))
+                pi = 1 - p_id_s
+
+                summation += p_du * pi
+
+            score += reg * summation
+
+            if score > best_score:
+                best_score = score
+                best_item = v
+
+        S.append(best_item)
+        final_result.append((best_item, best_score))
+
+    return tuple(final_result)

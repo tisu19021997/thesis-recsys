@@ -1,4 +1,3 @@
-import sys
 import numpy as np
 
 from surprise import SVD
@@ -54,44 +53,45 @@ class IncrementalSVD(SVD):
         else:
             global_mean = self.trainset.global_mean
 
-        for current_epoch in range(self.n_epochs):
-            for u, i, r in new_ratings:
-                # compute current error
-                dot = 0  # <q_i, p_u>
+        # for current_epoch in range(self.n_epochs):
+        # only run for 1 epoch?
+        for u, i, r in new_ratings:
+            # compute current error
+            dot = 0  # <q_i, p_u>
 
-                # if user is new, append new row to `pu`, new column to `bu`
-                if u > len(pu) - 1:
-                    pu = np.concatenate((pu, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))),
-                                        axis=0)
-                    bu = np.append(bu, 0)
+            # if user is new, append new row to `pu`, new column to `bu`
+            if u > len(pu) - 1:
+                pu = np.concatenate((pu, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))),
+                                    axis=0)
+                bu = np.append(bu, 0)
 
-                    # same for item
-                if i > len(qi) - 1:
-                    qi = np.concatenate((qi, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))),
-                                        axis=0)
-                    bi = np.append(bi, 0)
+                # same for item
+            if i > len(qi) - 1:
+                qi = np.concatenate((qi, rng.normal(self.init_mean, self.init_std_dev, (1, self.n_factors))),
+                                    axis=0)
+                bi = np.append(bi, 0)
 
-                for f in range(self.n_factors):
-                    dot += qi[i, f] * pu[u, f]
+            for f in range(self.n_factors):
+                dot += qi[i, f] * pu[u, f]
 
-                # compute the error
-                err = r - (global_mean + bu[u] + bi[i] + dot)
+            # compute the error
+            err = r - (global_mean + bu[u] + bi[i] + dot)
 
-                if verbose:
-                    # sys.stdout.write('\r')
-                    print(f'Epoch {current_epoch + 1}/{self.n_epochs}: loss: {abs(err)}')  # , end='')
+            # if verbose:
+            #     # sys.stdout.write('\r')
+            #     print(f'Epoch {current_epoch + 1}/{self.n_epochs}: loss: {abs(err)}')  # , end='')
 
-                # update biases
-                if self.biased:
-                    bu[u] += self.lr_bu * (err - self.reg_bu * bu[u])
-                    bi[i] += self.lr_bi * (err - self.reg_bi * bi[i])
+            # update biases
+            if self.biased:
+                bu[u] += self.lr_bu * (err - self.reg_bu * bu[u])
+                bi[i] += self.lr_bi * (err - self.reg_bi * bi[i])
 
-                # update factors
-                for f in range(self.n_factors):
-                    puf = pu[u, f]
-                    qif = qi[i, f]
-                    pu[u, f] += self.lr_pu * (err * qif - self.reg_pu * puf)
-                    qi[i, f] += self.lr_qi * (err * puf - self.reg_qi * qif)
+            # update factors
+            for f in range(self.n_factors):
+                puf = pu[u, f]
+                qif = qi[i, f]
+                pu[u, f] += self.lr_pu * (err * qif - self.reg_pu * puf)
+                qi[i, f] += self.lr_qi * (err * puf - self.reg_qi * qif)
 
         self.bu = bu
         self.bi = bi
