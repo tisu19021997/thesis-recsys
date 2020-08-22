@@ -9,12 +9,15 @@ class RecSys:
 
     def recommend(self, u_id, n=50):
         # Get all products
-        all_items = set(self.get_full_dataset()['i_id'].unique())
+        all_items = self.get_full_dataset()['i_id'].unique()
         user_profile = set(self.get_user_profile(u_id))
 
         # Predict the user rating on each product
         recommendations = []
-        for i_id in all_items - user_profile:
+        for i_id in all_items:
+            if i_id in user_profile:
+                continue
+
             prediction = self.model.predict_pair(u_id, i_id)
             recommendations.append((i_id, prediction))
 
