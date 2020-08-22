@@ -7,7 +7,7 @@ from zipfile import ZipFile
 from flask import request, Response, jsonify, send_from_directory, after_this_request
 from flask_cors import CORS
 from markupsafe import escape
-from surprise import Reader, dump, KNNBasic
+from surprise import Reader, dump, KNNWithMeans
 from surprise.accuracy import rmse, mae
 from werkzeug.exceptions import HTTPException, abort
 
@@ -15,38 +15,20 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from algo.ISVD import ISVD
-from algo.XQuad import xquad
 from helper.auth import is_good_request
-from helper.data import surprise_build_train_test as build_train_test, is_header_valid
-from helper.modeling import save_model
+from helper.data import build_train_test, is_header_valid
+from helper.modeling import save_model, build_recommendations, build_neighbors
 from main import app
 from wrapper.RecSys import RecSys
 
 CORS(app, expose_headers='X-Model-Info')
 app.config['CORS_HEADER'] = 'Content-Type'
 
-short_long_threshold = 20
+short_long_threshold = 3
 dataset_name = 'final-new.csv'
 
 
 # app.config['DEBUG'] = True
-def build_recommendations(recsys, uid, k=50, n=1000):
-    # Get the short head and long tail items for re-ranking the recommendation list.
-    short_head_items, long_tail_items = recsys.get_short_head_and_long_tail_items(threshold=short_long_threshold)
-
-    # Get the recommendations then re-rank using xQuAD algorithm
-    user_profile = recsys.get_user_profile(uid)
-    recommendations = xquad(recsys.recommend(uid, n), user_profile, short_head_items, long_tail_items,
-                            recsys.trainset, n_epochs=int(k))
-
-    return recommendations
-
-
-def build_neighbors(knn_model, iid, k=50):
-    inner_neighbors = knn_model.get_neighbors(knn_model.trainset.to_inner_iid(iid), k=int(k))
-    raw_neighbors = [knn_model.trainset.to_raw_iid(iid) for iid in inner_neighbors]
-
-    return raw_neighbors
 
 
 @app.route('/api/v1/users/batch', methods=['POST'])
@@ -68,7 +50,7 @@ def build_users_recommendation():
         all_recommendations = []
 
         for raw_uid in users:
-            recommendations = build_recommendations(recsys, raw_uid, k)
+            recommendations = build_recommendations(recsys, raw_uid, k, short_long_threshold=short_long_threshold)
             all_recommendations.append({'user': raw_uid, 'recommendation': recommendations})
 
         return jsonify({'recommendations': all_recommendations})
@@ -80,7 +62,7 @@ def build_users_recommendation():
 @app.route('/api/v1/products/batch', methods=['POST'])
 def build_products_neighbors():
     try:
-        model = dump.load('./model/iknn')
+        _, model = dump.load('./model/iknn')
         data = request.get_json()
         products, k = data.values()
 
@@ -93,7 +75,6 @@ def build_products_neighbors():
             all_recommendations.append({'product': asin, 'recommendation': raw_neighbors})
 
         return jsonify({'recommendations': all_recommendations})
-
     except (ValueError, KeyError) as e:
         handle_bad_request(e)
 
@@ -118,15 +99,12 @@ def build_user_recommendation(uid):
             # Partial fit new rating
             x = pd.DataFrame([(raw_uid, iid, rating)], columns=['u_id', 'i_id', 'rating'])
             recsys.model.partial_fit(x)
+            print('Done partial fitting...')
         else:
             k = request.args.get('k', 50)
 
-        # Get the short head and long tail items for re-ranking the recommendation list.
-        short_head_items, long_tail_items = recsys.get_short_head_and_long_tail_items(
-            threshold=short_long_threshold)
-
         # Get the recommendations then re-rank using xQuAD algorithm
-        recommendations = build_recommendations(recsys, uid, int(k))
+        recommendations = build_recommendations(recsys, uid, int(k), short_long_threshold=short_long_threshold)
 
         return jsonify(recommendations)
     except (ValueError, KeyError) as e:
@@ -140,7 +118,8 @@ def build_product_neighbors(asin):
         asin = escape(asin)
 
         # Init Item-based KNN model.
-        model = dump.load('./model/iknn')
+        _, model = dump.load('./model/iknn')
+
         k = request.args.get('k', 50)
         neighbors = build_neighbors(model, asin, int(k))
 
@@ -166,6 +145,8 @@ def train_model():
 
     # Use the data uploaded or data on server.
     df = pd.DataFrame(dataset, columns=data_header) if dataset else pd.read_csv('./data/' + dataset_name, header=0)
+
+    print(f'Training {model_name}...')
 
     if model_name == 'insvd':
         # Get and parse model hyper-parameter
@@ -194,19 +175,22 @@ def train_model():
         save_model(model_path, model=model, predictions=predictions_df, trainset=train_set)
     else:
         k, sim_options, random_state = params.values()
-        model = KNNBasic(k=int(k), sim_options={'name': sim_options, 'user_based': False},
-                         random_state=int(random_state))
+        model = KNNWithMeans(k=int(k), sim_options={'name': sim_options, 'user_based': False})
         try:
             train_set, test_set = build_train_test(df, Reader(), full=train_type == 'full')
-        except ValueError:
-            return jsonify({'error': 'Incorrect dataset format.'})
+        except ValueError as e:
+            return jsonify({'error': e})
 
+        import time
+        start = time.time()
         model.fit(train_set)
+        print(f'Done training. Time taken {time.time() - start}s')
+
         predictions = model.test(test_set)
         rmse_score = rmse(predictions)
         mae_score = mae(predictions)
 
-        dump.dump(model_path, algo=model, predictions=predictions)
+        dump.dump(model_path, algo=model)
 
     model_info = {
         'rmse': rmse_score,
@@ -224,6 +208,7 @@ def train_model():
     @after_this_request
     def remove_dump_files(response):
         # If not save model on server, delete model dump file.
+        print('Deleting dump file on the server...')
         if not save_on_server:
             os.remove(model_path)
 
@@ -233,6 +218,7 @@ def train_model():
         return response
 
     if save_on_local:
+        print('Reading model.zip file and shipping to user...')
         with open(f'{model_path}.zip', 'rb') as f:
             model_zip = f.readlines()
 
@@ -357,8 +343,8 @@ def dataset():
 
     # Posting new dataset.
     if request.method == 'POST':
-        old_data_path = '../data/final-old.csv'
-        new_data_path = '../data/final-new.csv'
+        old_data_path = './data/final-old.csv'
+        new_data_path = './data/final-new.csv'
 
         data = request.get_json()
 
