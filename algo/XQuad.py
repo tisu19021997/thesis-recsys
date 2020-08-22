@@ -76,7 +76,7 @@ def xquad(recommendation, user_profile, short_items, long_items, trainset, n_epo
     # we compute a score for each item in R\S (in R not in S)
     for n in range(n_epochs):
         # For selecting the best score
-        best_score = float('-Inf')
+        best_score = 0
         best_item = None
 
         for r in recommendation:
