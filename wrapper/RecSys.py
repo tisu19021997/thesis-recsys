@@ -70,4 +70,8 @@ class RecSys:
         return short_head_items, long_tail_items
 
     def get_user_profile(self, u_id):
+        """Return the user's rated products as a numpy.ndarray
+        Args:
+            u_id (str): User's id
+        """
         return self.trainset[self.trainset['u_id'] == u_id]['i_id'].unique()

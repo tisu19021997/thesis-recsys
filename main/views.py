@@ -62,13 +62,16 @@ def build_users_recommendation():
 @app.route('/api/v1/products/batch', methods=['POST'])
 def build_products_neighbors():
     try:
+        print('Loading model...')
         _, model = dump.load('./model/iknn')
         data = request.get_json()
         products, k = data.values()
+        print('Modal loaded...')
 
         all_recommendations = []
 
         for asin in products:
+            print(f'Generating related products for {asin}')
             inner_neighbors = model.get_neighbors(model.trainset.to_inner_iid(asin), k=int(k))
             raw_neighbors = [model.trainset.to_raw_iid(iid) for iid in inner_neighbors]
             # recommendations = recsys.get_k_neighbors(asin, k=int(k))
@@ -145,6 +148,7 @@ def train_model():
 
     # Use the data uploaded or data on server.
     df = pd.DataFrame(dataset, columns=data_header) if dataset else pd.read_csv('./data/' + dataset_name, header=0)
+    df['rating'] = df['rating'].astype('float32')
 
     print(f'Training {model_name}...')
 

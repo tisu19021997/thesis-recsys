@@ -20,10 +20,16 @@ def build_recommendations(recsys, uid, k=50, n=1000, short_long_threshold=3):
     # Get the short head and long tail items for re-ranking the recommendation list.
     short_head_items, long_tail_items = recsys.get_short_head_and_long_tail_items(threshold=short_long_threshold)
 
-    # Get the recommendations then re-rank using xQuAD algorithm
-    user_profile = recsys.get_user_profile(uid)
     # Get the base recommendations
     raw_recommendations = recsys.recommend(uid, n)
+
+    # Get the recommendations then re-rank using xQuAD algorithm
+    user_profile = recsys.get_user_profile(uid).tolist()
+
+    # New user
+    if not user_profile:
+        return raw_recommendations[:k]
+
     # Re-rank the recommendation using xquad
     recommendations = xquad(raw_recommendations, user_profile, short_head_items, long_tail_items, n_epochs=int(k))
 
