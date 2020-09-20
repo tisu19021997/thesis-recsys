@@ -8,5 +8,5 @@ def is_good_request(request):
 
 
 def is_good_token(json_web_token):
-    r = requests.get('https://thesis-recsys.herokuapp.com/api/v1/auth/admin', auth=BearerAuth(json_web_token))
+    r = requests.get('https://thesis-nodeapi.herokuapp.com/api/v1/auth/admin', auth=BearerAuth(json_web_token))
     return r.status_code == 200
