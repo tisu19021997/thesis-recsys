@@ -10,7 +10,6 @@ cryptography==2.9.2
 firebase-admin==4.3.0
 Flask==1.1.2
 Flask-Cors==3.0.8
-funk-svd==0.0.1.dev1
 google-api-core==1.21.0
 google-api-python-client==1.10.0
 google-auth==1.19.2
