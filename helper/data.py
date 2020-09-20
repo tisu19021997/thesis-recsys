@@ -1,3 +1,6 @@
+import os
+from io import StringIO
+from azure.storage.blob import BlobClient
 from surprise import Dataset, Reader
 from sklearn.model_selection import train_test_split
 
@@ -36,6 +39,18 @@ def get_products_from_ratings(ratings, tolist=False):
 
 def get_reviewers_from_ratings(ratings, tolist=False):
     return ratings.reviewerID if not tolist else ratings.reviewerID.values.tolist()
+
+
+def get_azure_ml_stream_from_blob(blob_url, credential=os.getenv('AZUREML_CREDENTIAL')):
+    """ Returns the Azure ML stream from a blob URL.
+    Args:
+        credential (str): Azure Key.
+        blob_url (str): Blob URL to fetch.
+    """
+    blob_client = BlobClient.from_blob_url(blob_url=blob_url, credential=credential)
+    stream = blob_client.download_blob()
+
+    return stream.readall()
 
 
 def is_header_valid(data_header):

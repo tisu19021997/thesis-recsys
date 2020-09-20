@@ -1,11 +1,18 @@
 import pandas as pd
-from helper.modeling import load_model
+from helper.modeling import load_model_from_file, load_model_from_blob
 from collections import defaultdict
 
 
 class RecSys:
-    def __init__(self, model_path):
-        self.model, self.predictions, self.trainset = load_model(model_path)
+    def __init__(self, model_path=None, model_blob_url=None):
+        assert model_path or model_blob_url, 'Please provide either the model path or the model blob.'
+
+        if model_path:
+            model_content = load_model_from_file(model_path)
+        else:
+            model_content = load_model_from_blob(model_blob_url)
+
+        self.model, self.predictions, self.trainset = model_content
 
     def recommend(self, u_id, n=50):
         # Get all products

@@ -1,5 +1,6 @@
 import json
 import os
+import io
 import pandas as pd
 import numpy as np
 
@@ -10,6 +11,7 @@ from markupsafe import escape
 from surprise import Reader, dump, KNNWithMeans
 from surprise.accuracy import rmse, mae
 from werkzeug.exceptions import HTTPException, abort
+from dotenv import load_dotenv, find_dotenv
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -18,8 +20,11 @@ from algo.ISVD import ISVD
 from helper.auth import is_good_request
 from helper.data import build_train_test, is_header_valid
 from helper.modeling import save_model, build_recommendations, build_neighbors
+from helper.data import get_azure_ml_stream_from_blob
 from main import app
 from wrapper.RecSys import RecSys
+
+load_dotenv(find_dotenv())
 
 CORS(app, expose_headers='X-Model-Info')
 app.config['CORS_HEADER'] = 'Content-Type'
@@ -30,6 +35,7 @@ dataset_name = 'final-new.csv'
 
 # app.config['DEBUG'] = True
 
+# TODO: Use dataset from Azure instead of local
 
 @app.route('/api/v1/users/batch', methods=['POST'])
 def build_users_recommendation():
@@ -44,7 +50,9 @@ def build_users_recommendation():
         k = int(k) or 50
 
         # Init Incremental SVD Model.
-        recsys = RecSys('./model/insvd')
+        # recsys = RecSys('./model/insvd')
+        blob_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/insvd'
+        recsys = RecSys(model_blob_url=blob_url)
 
         # Create a list to store all recommendations.
         all_recommendations = []
@@ -90,7 +98,8 @@ def build_user_recommendation(uid):
 
         # Init Incremental SVD Model.
         # recsys = RecSys('./model/insvd')
-        recsys = RecSys('./model/insvd')
+        blob_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/insvd'
+        recsys = RecSys(model_blob_url=blob_url)
 
         if request.method == 'POST':
             # Get data from request.
@@ -147,7 +156,11 @@ def train_model():
         return jsonify({'message': '[ERROR] Incorrect dataset format.'})
 
     # Use the data uploaded or data on server.
-    df = pd.DataFrame(dataset, columns=data_header) if dataset else pd.read_csv('./data/' + dataset_name, header=0)
+    if dataset:
+        df = pd.DataFrame(dataset, columns=data_header)
+    else:
+        df = pd.read_csv('./data/' + dataset_name, header=0)
+
     df['rating'] = df['rating'].astype('float32')
 
     print(f'Training {model_name}...')
@@ -369,7 +382,10 @@ def dataset():
         return jsonify({'message': 'Uploading successfully.'})
     else:
         # Get current dataset.
-        return send_from_directory('../data', 'final-new.csv'), 200
+        data_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/' + dataset_name
+        data = io.BytesIO(get_azure_ml_stream_from_blob(blob_url=data_url))
+        return Response(data, mimetype='text/csv')
+        # return send_from_directory('../data', 'final-new.csv'), 200
 
 
 @app.errorhandler(HTTPException)

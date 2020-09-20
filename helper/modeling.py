@@ -1,5 +1,6 @@
 import pickle
 from algo.XQuad import xquad
+from helper.data import get_azure_ml_stream_from_blob
 
 
 def save_model(file_name, model=None, predictions=None, trainset=None):
@@ -11,8 +12,15 @@ def save_model(file_name, model=None, predictions=None, trainset=None):
     pickle.dump(dump_obj, open(file_name, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_model(file_name):
+def load_model_from_file(file_name):
     dump_obj = pickle.load(open(file_name, 'rb'))
+    return dump_obj['model'], dump_obj['predictions'], dump_obj['trainset']
+
+
+def load_model_from_blob(blob_url):
+    model_file = get_azure_ml_stream_from_blob(blob_url)
+    dump_obj = pickle.loads(model_file)
+
     return dump_obj['model'], dump_obj['predictions'], dump_obj['trainset']
 
 
