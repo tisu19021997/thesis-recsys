@@ -17,11 +17,14 @@ def load_model_from_file(file_name):
     return dump_obj['model'], dump_obj['predictions'], dump_obj['trainset']
 
 
-def load_model_from_blob(blob_url):
+def load_model_from_blob(blob_url, model_name='insvd'):
     model_file = get_azure_ml_stream_from_blob(blob_url)
     dump_obj = pickle.loads(model_file)
 
-    return dump_obj['model'], dump_obj['predictions'], dump_obj['trainset']
+    if model_name == 'insvd':
+        return dump_obj['model'], dump_obj['predictions'], dump_obj['trainset']
+
+    return dump_obj['predictions'], dump_obj['model']
 
 
 def build_recommendations(recsys, uid, k=50, n=1000, short_long_threshold=3):

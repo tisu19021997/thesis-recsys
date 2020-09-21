@@ -19,7 +19,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from algo.ISVD import ISVD
 from helper.auth import is_good_request
 from helper.data import build_train_test, is_header_valid
-from helper.modeling import save_model, build_recommendations, build_neighbors
+from helper.modeling import save_model, build_recommendations, build_neighbors, load_model_from_blob
 from helper.data import get_azure_ml_stream_from_blob
 from main import app
 from wrapper.RecSys import RecSys
@@ -107,7 +107,9 @@ def build_user_recommendation(uid):
 def build_products_neighbors():
     try:
         print('Loading model...')
-        _, model = dump.load('./model/iknn')
+        # _, model = dump.load('./model/iknn')
+
+        _, model = load_model_from_blob(iknn_url, model_name='iknn')
         data = request.get_json()
         products, k = data.values()
         print('Modal loaded...')
@@ -133,7 +135,8 @@ def build_product_neighbors(asin):
         asin = escape(asin)
 
         # Init Item-based KNN model.
-        _, model = dump.load('./model/iknn')
+        # _, model = dump.load('./model/iknn')
+        _, model = load_model_from_blob(iknn_url, model_name='iknn')
 
         k = request.args.get('k', 50)
         neighbors = build_neighbors(model, asin, int(k))
