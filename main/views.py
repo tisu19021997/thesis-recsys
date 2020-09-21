@@ -153,7 +153,8 @@ def train_model():
     data = request.get_json()
     dataset, data_header, model_name, params, train_type, save_on_server, save_on_local = data.values()
     # Add suffix if not save on server.
-    model_path = f'./model/{model_name}' if save_on_server else f'./model/{model_name}-temp'
+    # model_path = f'./model/{model_name}' if save_on_server else f'./model/{model_name}-temp'
+    model_path = f'{os.getcwd()}/{model_name}' if save_on_server else f'{os.getcwd()}/{model_name}-temp'
 
     if dataset and not is_header_valid(data_header):
         return jsonify({'message': '[ERROR] Incorrect dataset format.'})
