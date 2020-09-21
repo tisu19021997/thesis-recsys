@@ -31,6 +31,11 @@ app.config['CORS_HEADER'] = 'Content-Type'
 
 short_long_threshold = 3
 dataset_name = 'final-new.csv'
+svd_model_name = 'insvd'
+iknn_model_name = 'iknn'
+data_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/' + dataset_name
+svd_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/' + svd_model_name
+iknn_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/' + iknn_model_name
 
 
 # app.config['DEBUG'] = True
@@ -51,8 +56,7 @@ def build_users_recommendation():
 
         # Init Incremental SVD Model.
         # recsys = RecSys('./model/insvd')
-        blob_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/insvd'
-        recsys = RecSys(model_blob_url=blob_url)
+        recsys = RecSys(model_blob_url=svd_url)
 
         # Create a list to store all recommendations.
         all_recommendations = []
@@ -65,6 +69,38 @@ def build_users_recommendation():
 
     except (ValueError, KeyError) as e:
         return str(e)
+
+
+@app.route('/api/v1/users/<string:uid>', methods=['GET', 'POST'])
+def build_user_recommendation(uid):
+    try:
+        # Escaping param.
+        raw_uid = escape(uid)
+
+        # Init Incremental SVD Model.
+        # recsys = RecSys('./model/insvd')
+        recsys = RecSys(model_blob_url=svd_url)
+
+        if request.method == 'POST':
+            # Get data from request.
+            data = request.get_json()
+
+            iid, rating, k = data.values()
+            rating = float(rating)
+
+            # Partial fit new rating
+            x = pd.DataFrame([(raw_uid, iid, rating)], columns=['u_id', 'i_id', 'rating'])
+            recsys.model.partial_fit(x)
+            print('Done partial fitting...')
+        else:
+            k = request.args.get('k', 50)
+
+        # Get the recommendations then re-rank using xQuAD algorithm
+        recommendations = build_recommendations(recsys, uid, int(k), short_long_threshold=short_long_threshold)
+
+        return jsonify(recommendations)
+    except (ValueError, KeyError) as e:
+        handle_bad_request(e)
 
 
 @app.route('/api/v1/products/batch', methods=['POST'])
@@ -86,39 +122,6 @@ def build_products_neighbors():
             all_recommendations.append({'product': asin, 'recommendation': raw_neighbors})
 
         return jsonify({'recommendations': all_recommendations})
-    except (ValueError, KeyError) as e:
-        handle_bad_request(e)
-
-
-@app.route('/api/v1/users/<string:uid>', methods=['GET', 'POST'])
-def build_user_recommendation(uid):
-    try:
-        # Escaping param.
-        raw_uid = escape(uid)
-
-        # Init Incremental SVD Model.
-        # recsys = RecSys('./model/insvd')
-        blob_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/insvd'
-        recsys = RecSys(model_blob_url=blob_url)
-
-        if request.method == 'POST':
-            # Get data from request.
-            data = request.get_json()
-
-            iid, rating, k = data.values()
-            rating = float(rating)
-
-            # Partial fit new rating
-            x = pd.DataFrame([(raw_uid, iid, rating)], columns=['u_id', 'i_id', 'rating'])
-            recsys.model.partial_fit(x)
-            print('Done partial fitting...')
-        else:
-            k = request.args.get('k', 50)
-
-        # Get the recommendations then re-rank using xQuAD algorithm
-        recommendations = build_recommendations(recsys, uid, int(k), short_long_threshold=short_long_threshold)
-
-        return jsonify(recommendations)
     except (ValueError, KeyError) as e:
         handle_bad_request(e)
 
@@ -159,7 +162,8 @@ def train_model():
     if dataset:
         df = pd.DataFrame(dataset, columns=data_header)
     else:
-        df = pd.read_csv('./data/' + dataset_name, header=0)
+        data = io.BytesIO(get_azure_ml_stream_from_blob(blob_url=data_url))
+        df = pd.read_csv(data, header=0)
 
     df['rating'] = df['rating'].astype('float32')
 
@@ -216,9 +220,11 @@ def train_model():
 
     # Zip the trained model.
     try:
+        print('Zipping model...')
         zip_obj = ZipFile(f'{model_path}.zip', 'w')
         zip_obj.write(model_path)
         zip_obj.close()
+        print('Sending model zip...')
     except FileNotFoundError:
         return abort(404)
 
@@ -254,6 +260,40 @@ def train_model():
         # return send_from_directory('./model', model_file), 200
 
     return jsonify(model_info)
+
+
+@app.route('/api/v1/dataset', methods=['GET', 'POST'])
+def dataset():
+    if not is_good_request(request):
+        return abort(400)
+
+    # Posting new dataset.
+    if request.method == 'POST':
+        old_data_path = './data/final-old.csv'
+        new_data_path = './data/final-new.csv'
+
+        data = request.get_json()
+
+        if not is_header_valid(data['header']):
+            return jsonify({'message': 'Incorrect dataset format.'})
+
+        if not data['data']:
+            return jsonify({'message': 'Empty data.'})
+
+        # If the old dataset exists, rename it to *-old.csv
+        if os.path.isfile(new_data_path):
+            os.rename(new_data_path, old_data_path)
+
+        # Save as a csv file.
+        df = pd.DataFrame(data['data'], columns=data['header'])
+        df.to_csv(new_data_path, index=False)
+
+        return jsonify({'message': 'Uploading successfully.'})
+    else:
+        # Get current dataset.
+        data = io.BytesIO(get_azure_ml_stream_from_blob(blob_url=data_url))
+        return Response(data, mimetype='text/csv')
+        # return send_from_directory('../data', 'final-new.csv'), 200
 
 
 # def train_model():
@@ -351,41 +391,6 @@ def test_model():
     rmse(preds)
 
     return 'OK', 200
-
-
-@app.route('/api/v1/dataset', methods=['GET', 'POST'])
-def dataset():
-    if not is_good_request(request):
-        return abort(400)
-
-    # Posting new dataset.
-    if request.method == 'POST':
-        old_data_path = './data/final-old.csv'
-        new_data_path = './data/final-new.csv'
-
-        data = request.get_json()
-
-        if not is_header_valid(data['header']):
-            return jsonify({'message': 'Incorrect dataset format.'})
-
-        if not data['data']:
-            return jsonify({'message': 'Empty data.'})
-
-        # If the old dataset exists, rename it to *-old.csv
-        if os.path.isfile(new_data_path):
-            os.rename(new_data_path, old_data_path)
-
-        # Save as a csv file.
-        df = pd.DataFrame(data['data'], columns=data['header'])
-        df.to_csv(new_data_path, index=False)
-
-        return jsonify({'message': 'Uploading successfully.'})
-    else:
-        # Get current dataset.
-        data_url = os.getenv('AZURE_ACCOUNT_URL') + '/svd-model/' + dataset_name
-        data = io.BytesIO(get_azure_ml_stream_from_blob(blob_url=data_url))
-        return Response(data, mimetype='text/csv')
-        # return send_from_directory('../data', 'final-new.csv'), 200
 
 
 @app.errorhandler(HTTPException)
