@@ -1,6 +1,6 @@
 # Thesis' Recommender System
-A REST-ful API that allows calls from clients (my React front-end) to perform tasks like building the models (Incremental SVD and Item-based KNN), recommendations for users, related products for products.
-
+* A REST-ful API that allows calls from clients (my React front-end) to perform tasks like building the models (Incremental SVD and Item-based KNN), recommendations for users, related products for products.
+* The paper I published along with this project can be found [here][paper].
 ## Frameworks
 * **Web Server**: `Flask` - https://flask.palletsprojects.com/en/1.1.x/
 * **Machine Learning**:
