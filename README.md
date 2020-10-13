@@ -1,4 +1,7 @@
 # Thesis' Recommender System
+It can be a bit slow as start up since `heroku` put applications in sleep mode after a short period of inactive.
+## Live demo: https://thesis-frontend.herokuapp.com 
+
 * A REST-ful API that allows calls from clients (my React front-end) to perform tasks like building the models (Incremental SVD and Item-based KNN), recommendations for users, related products for products.
 * The paper I published along with this project can be found [here][paper].
 ## Frameworks
