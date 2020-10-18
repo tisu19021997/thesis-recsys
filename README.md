@@ -8,8 +8,8 @@ Moreover, since the application is divided into three parts: ReactJS front-end, 
 only "wakes up" when its functions are being used (especially for recommender system, it only starts when log-in as admin 
 and use the recommender system), some functions may be slow at first.
 
-* :red_circle: Login as admin: username "admin", password "admin" => head to `/recommender` route to use the recommender system (train/test/save model, dataset) and other small features.
-* Login as usual user: username "A2GKMXRLI7KLFP", password "123" => explore the webiste functions like browsing/search/add-to-cart products, sort/filter products, etc.
+* :red_circle: **Login as admin**: username **"admin"**, password **"admin"** => head to `/recommender` route to use the recommender system (train/test/save model, dataset) and other small features.
+* :large_blue_circle: **Login as usual user**: username **"A2GKMXRLI7KLFP"**, password **"123"** => explore the webiste functions like browsing/search/add-to-cart products, sort/filter products, etc.
    
 ## Paper I published along with this project: https://github.com/tisu19021997/my-notebooks/tree/main/svd-xquad
 
