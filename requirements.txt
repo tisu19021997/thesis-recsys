@@ -25,7 +25,7 @@ httplib2==0.19.0
 idna==2.9
 isodate==0.6.0
 itsdangerous==1.1.0
-Jinja2==2.11.2
+Jinja2==2.11.3
 joblib==0.15.1
 jwcrypto==0.7
 llvmlite==0.34.0
