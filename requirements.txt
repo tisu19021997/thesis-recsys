@@ -9,7 +9,7 @@ click==7.1.2
 cryptography==3.3.2
 firebase-admin==4.3.0
 Flask==1.1.2
-Flask-Cors==3.0.8
+Flask-Cors==3.0.9
 google-api-core==1.21.0
 google-api-python-client==1.10.0
 google-auth==1.19.2
