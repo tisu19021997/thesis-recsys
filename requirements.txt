@@ -33,7 +33,7 @@ MarkupSafe==1.1.1
 msgpack==1.0.0
 msrest==0.6.19
 numba==0.51.0
-numpy==1.18.5
+numpy==1.22.0
 oauthlib==3.1.0
 pandas==1.0.5
 pd==0.0.1
