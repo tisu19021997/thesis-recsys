@@ -1,7 +1,7 @@
 # Thesis' Recommender System
 * This repo contains only the source code of the recommender system which is a REST-ful API that allows calls from clients (my React front-end) to perform tasks like building the models (Incremental SVD and Item-based KNN), recommendations for users, related products for products.
 
-## Live demo: https://thesis-frontend.herokuapp.com
+## Live demo: https://thesis-frontend.herokuapp.com (NOT WORKING)
 
 :warning: **Note**: The live demo can be a bit slow as start up since `heroku` put applications in sleep mode after a short period of inactive.
 Moreover, since the application is divided into three parts: ReactJS front-end, NodeJS back-end, Flask recommender system, each of them
@@ -15,9 +15,9 @@ and use the recommender system), some functions may be slow at first.
 
 ## Frameworks
 * **Web Stack**: 
-    * Recommender System: `Flask`
-    * Front-end: `ReactJS`
-    * Back-end: `NodeJs` and `ExpressJS`
+    * Recommender System: `Flask` (this repo)
+    * Front-end: `ReactJS` (https://github.com/tisu19021997/thesis-react)
+    * Back-end: `NodeJs` and `ExpressJS` (https://github.com/tisu19021997/thesis-node)
     * Database: `MongoDB`
     
 * **Machine Learning**:
